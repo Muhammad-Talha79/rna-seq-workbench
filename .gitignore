@@ -1,0 +1,32 @@
+# Python & Environment
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.env
+
+# Pipeline Output Directories & Reference Files
+01_qc/
+02_aligned/
+03_counts/
+ref/
+scripts/
+data/
+jobs/
+
+# Data Files & Databases
+*.db
+*.sqlite3
+*.fastq
+*.bam
+*.bai
+*.summary
+
+# Frontend / Node
+node_modules/
+dist/
+.vite/
+*.log
+
+# System
+.DS_Store
