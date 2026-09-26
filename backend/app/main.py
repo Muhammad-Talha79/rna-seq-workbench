@@ -1,17 +1,14 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.api.v1.endpoints import router as api_v1_router
-from app.database import engine, Base
-
-# Create tables automatically on application startup
-Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
-    title="RNA-Seq Transcriptomics Pipeline API",
-    description="FastAPI service for running automated RNA-seq alignment and quantification.",
-    version="1.0.0"
+    title="RNA-seq Workbench API",
+    version="1.0.0",
+    description="Backend API for RNA-seq analysis, QC, differential expression, and pathway enrichment."
 )
 
+# Enable CORS for React frontend
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -20,8 +17,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(api_v1_router, prefix="/api/v1")
+# Mount endpoints under /api/v1/pipeline
+app.include_router(api_v1_router, prefix="/api/v1/pipeline", tags=["pipeline"])
 
 @app.get("/")
 async def root():
-    return {"status": "online", "database": "SQLite connected", "message": "RNA-Seq Pipeline API is active."}
+    return {"message": "RNA-seq Workbench API Operational", "status": "active"}
