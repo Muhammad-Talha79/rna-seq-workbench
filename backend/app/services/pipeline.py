@@ -122,3 +122,29 @@ class PipelineRunner:
         genes = [f"ENSG00000{i:06d}" for i in range(1, limit + 1)]
         counts = np.random.randint(10, 50000, size=limit)
         return [{"gene_id": g, "count": int(c)} for g, c in zip(genes, counts)]
+
+async def run_multiqc(job_id: str, data_dir) -> str:
+    """Runs MultiQC on all FastQC output files for the given job."""
+    qc_dir = data_dir / job_id / "01_fastqc"
+    multiqc_dir = data_dir / job_id / "01_multiqc"
+    multiqc_dir.mkdir(parents=True, exist_ok=True)
+
+    cmd = [
+        "multiqc",
+        str(qc_dir),
+        "-o", str(multiqc_dir),
+        "-f",
+        "--filename", "multiqc_report.html"
+    ]
+
+    process = await asyncio.create_subprocess_exec(
+        *cmd,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE
+    )
+    stdout, stderr = await process.communicate()
+
+    if process.returncode != 0:
+        raise RuntimeError(f"MultiQC execution failed: {stderr.decode()}")
+
+    return str(multiqc_dir / "multiqc_report.html")

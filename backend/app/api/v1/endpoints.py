@@ -264,3 +264,42 @@ async def get_fastqc_report(job_id: str, db: Session = Depends(get_db)):
     html_content = html_content.replace("<head>", patch_head, 1)
 
     return HTMLResponse(content=html_content)
+
+@router.get("/multiqc/{job_id}", response_class=HTMLResponse)
+async def get_multiqc_report(job_id: str, db: Session = Depends(get_db)):
+    job = db.query(PipelineJob).filter(PipelineJob.job_id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job ID not found")
+
+    report_path = settings.DATA_DIR / job_id / "01_multiqc" / "multiqc_report.html"
+
+    if not report_path.exists():
+        return HTMLResponse(
+            content=f"<html><body style='background:#0f172a;color:#94a3b8;font-family:sans-serif;padding:40px;text-align:center;'><h2>MultiQC Report Pending or Unavailable</h2><p>Job ID: {job_id}</p></body></html>",
+            status_code=404
+        )
+
+    with open(report_path, "r", encoding="utf-8") as f:
+        html_content = f.read()
+
+    patch_head = """
+    <head>
+    <base target="_self">
+    <script>
+      document.addEventListener('DOMContentLoaded', function() {
+        document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+          anchor.addEventListener('click', function (e) {
+            e.preventDefault();
+            const targetId = this.getAttribute('href').substring(1);
+            const targetEl = document.getElementById(targetId) || document.querySelector('[name="' + targetId + '"]');
+            if (targetEl) {
+              targetEl.scrollIntoView({ behavior: 'smooth' });
+            }
+          });
+        });
+      });
+    </script>
+    """
+    html_content = html_content.replace("<head>", patch_head, 1)
+
+    return HTMLResponse(content=html_content)
