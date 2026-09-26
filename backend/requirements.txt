@@ -2,3 +2,6 @@ multiqc==1.21
 multiqc==1.21
 gseapy==1.1.2
 pandas==2.2.1
+scanpy==1.9.6
+anndata==0.10.5
+matplotlib==3.8.3

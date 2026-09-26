@@ -47,3 +47,12 @@ async def get_enrichment_analysis(comparison_id: str):
             content={"status": "error", "message": f"Enrichment calculation failed: {str(e)}", "results": []},
             status_code=500
         )
+
+from app.services.scrna import run_scrna_pipeline
+
+@router.post("/scrna/analyze")
+async def analyze_single_cell(h5_path: str = None):
+    result = run_scrna_pipeline(h5_path)
+    if result.get("status") == "error":
+        raise HTTPException(status_code=500, detail=result.get("message"))
+    return JSONResponse(content=result)
