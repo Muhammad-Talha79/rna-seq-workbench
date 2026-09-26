@@ -1,60 +1,73 @@
 import scanpy as sc
-import anndata as ad
 import pandas as pd
-import numpy as np
+import warnings
 from pathlib import Path
 from typing import Dict, Any
 
+# Suppress pandas/anndata future warnings
+warnings.filterwarnings('ignore')
+
 def run_scrna_pipeline(h5_path: str = None) -> Dict[str, Any]:
-    """
-    Executes a standard Scanpy single-cell RNA-seq pipeline:
-    Quality control filtering, normalization, log1p transformation, 
-    highly variable gene selection, PCA, neighbors, UMAP, and Leiden clustering.
-    """
     try:
         if h5_path and Path(h5_path).exists():
             adata = sc.read_10x_h5(h5_path)
         else:
-            # Fallback to Scanpy built-in pbmc3k dataset for robust testing
             adata = sc.datasets.pbmc3k()
         
-        # Ensure unique gene names
         adata.var_names_make_unique()
+        
+        # Subsample for rapid execution
+        if adata.n_obs > 500:
+            sc.pp.subsample(adata, n_obs=500)
 
-        # Mitochondrial QC metrics
-        adata.var['mt'] = adata.var_names.str.startswith('MT-')
-        sc.pp.calculate_qc_metrics(adata, qc_vars=['mt'], percent_top=None, inplace=True)
-        
-        # Cell and gene filtering
-        sc.pp.filter_cells(adata, min_genes=200)
+        # QC and filtering
+        sc.pp.filter_cells(adata, min_genes=100)
         sc.pp.filter_genes(adata, min_cells=3)
-        if 'pct_counts_mt' in adata.obs.columns:
-            adata = adata[adata.obs.pct_counts_mt < 5, :].copy()
         
-        # Normalization and Log transformation
+        # Normalization and log transformation
         sc.pp.normalize_total(adata, target_sum=1e4)
         sc.pp.log1p(adata)
         
-        # Highly variable genes
-        sc.pp.highly_variable_genes(adata, min_mean=0.012, max_mean=3, min_disp=0.5)
+        # Highly variable genes & PCA (using correct argument: n_top_genes)
+        sc.pp.highly_variable_genes(adata, n_top_genes=1000)
         adata = adata[:, adata.var.highly_variable].copy()
-        
-        # Dimensionality Reduction & Clustering
-        sc.pp.scale(adata, max_value=10)
         sc.tl.pca(adata, svd_solver='arpack')
-        sc.pp.neighbors(adata, n_neighbors=10, n_pcs=30)
+        
+        # Graph construction and clustering
+        sc.pp.neighbors(adata, n_neighbors=10, n_pcs=15)
         sc.tl.umap(adata)
-        sc.tl.leiden(adata, resolution=0.6)
         
-        # Summarize cluster statistics
-        cluster_counts = adata.obs['leiden'].value_counts().to_dict()
+        try:
+            sc.tl.leiden(adata, resolution=0.5)
+            cluster_col = 'leiden'
+        except Exception:
+            sc.tl.louvain(adata, resolution=0.5)
+            cluster_col = 'louvain'
         
+        cluster_counts = adata.obs[cluster_col].value_counts().to_dict()
+        
+        # Extract 2D UMAP coordinates for frontend scatter plots
+        umap_coords = []
+        for i in range(min(100, len(adata))):
+            umap_coords.append({
+                "cell_id": str(adata.obs_names[i]),
+                "x": float(adata.obsm['X_umap'][i, 0]),
+                "y": float(adata.obsm['X_umap'][i, 1]),
+                "cluster": str(adata.obs[cluster_col].iloc[i])
+            })
+
         return {
             "status": "success",
             "n_cells": int(adata.n_obs),
             "n_genes": int(adata.n_vars),
             "clusters": {str(k): int(v) for k, v in cluster_counts.items()},
-            "message": "Scanpy scRNA-seq pipeline successfully executed."
+            "umap_coordinates": umap_coords,
+            "message": "Scanpy scRNA-seq pipeline executed successfully."
         }
     except Exception as e:
-        return {"status": "error", "message": str(e), "clusters": {}}
+        return {
+            "status": "error",
+            "message": f"Scanpy execution failed: {str(e)}",
+            "clusters": {},
+            "umap_coordinates": []
+        }
