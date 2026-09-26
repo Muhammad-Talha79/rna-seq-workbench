@@ -303,3 +303,23 @@ async def get_multiqc_report(job_id: str, db: Session = Depends(get_db)):
     html_content = html_content.replace("<head>", patch_head, 1)
 
     return HTMLResponse(content=html_content)
+
+from app.services.enrichment import run_pathway_enrichment
+import pandas as pd
+
+@router.get("/enrichment/{comparison_id}")
+async def get_enrichment_analysis(comparison_id: str, db: Session = Depends(get_db)):
+    results = db.query(DESeq2Result).filter(DESeq2Result.comparison_id == comparison_id).all()
+    if not results:
+        raise HTTPException(status_code=404, detail="Comparison ID not found or no results stored")
+
+    data = [{
+        "gene_id": r.gene_id,
+        "log2_fold_change": r.log2_fold_change,
+        "padj": r.padj
+    } for r in results]
+    
+    deg_df = pd.DataFrame(data)
+    enrichment_data = run_pathway_enrichment(deg_df)
+    
+    return JSONResponse(content=enrichment_data)
