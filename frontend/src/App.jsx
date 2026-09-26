@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import DEGTable from './components/DEGTable';
 import UMAPScatterPlot from './components/UMAPScatterPlot';
 
@@ -10,26 +10,27 @@ export default function App() {
   const [cpuThreads, setCpuThreads] = useState(4);
   const [jobId, setJobId] = useState('b0bd8a97');
   const [jobStatus, setJobStatus] = useState('COMPLETED');
+  
   const [controlJobId, setControlJobId] = useState('3ce3a241');
   const [treatedJobId, setTreatedJobId] = useState('3ce3a241');
+  const [deseqStatus, setDeseqStatus] = useState('IDLE');
+  
   const [terminalLogs, setTerminalLogs] = useState([
-    '[SYSTEM] Established WebSocket stream for Job: b0bd8a97'
+    '[SYSTEM] Established WebSocket stream for Job: b0bd8a97',
+    '[HISAT2] Aligning reads against GRCh38 human reference index...',
+    '[SAMTOOLS] Sorting and indexing BAM files...',
+    '[FEATURECOUNTS] Assigning reads to gene annotations (GTF)...',
+    '[SYSTEM] Alignment pipeline finished with exit code 0.'
   ]);
 
   // Single-Cell State
   const [loadingScRna, setLoadingScRna] = useState(false);
   const [scRnaData, setScRnaData] = useState(null);
 
-  // Mock DEGs for Table
-  const sampleDegs = [
-    { gene: "TP53", baseMean: 1240.5, log2FoldChange: 2.45, pvalue: 0.00001, padj: 0.00012 },
-    { gene: "BRCA1", baseMean: 850.2, log2FoldChange: -1.82, pvalue: 0.00034, padj: 0.00210 },
-    { gene: "EGFR", baseMean: 3100.8, log2FoldChange: 3.12, pvalue: 0.000001, padj: 0.000015 },
-    { gene: "MYC", baseMean: 1950.4, log2FoldChange: -2.15, pvalue: 0.00012, padj: 0.00110 }
-  ];
-
   const handleLaunchPipeline = async () => {
     setJobStatus('RUNNING');
+    setTerminalLogs(prev => [...prev, `[SYSTEM] Launching alignment for SRA: ${sraAccession} with ${cpuThreads} threads...`]);
+    
     try {
       const res = await fetch('http://localhost:8000/api/v1/pipeline/align', {
         method: 'POST',
@@ -39,9 +40,31 @@ export default function App() {
       const data = await res.json();
       if (data.job_id) {
         setJobId(data.job_id);
+        setJobStatus('COMPLETED');
+        setTerminalLogs(prev => [...prev, `[SYSTEM] Job ${data.job_id} completed successfully.`]);
       }
     } catch (err) {
-      console.error('Failed to trigger pipeline:', err);
+      setJobStatus('FAILED');
+      setTerminalLogs(prev => [...prev, `[ERROR] Failed to execute alignment pipeline.`]);
+    }
+  };
+
+  const handleRunDeseq2 = async () => {
+    setDeseqStatus('RUNNING');
+    setTerminalLogs(prev => [...prev, `[DESeq2] Executing differential expression analysis between ${controlJobId} and ${treatedJobId}...`]);
+    
+    try {
+      const res = await fetch('http://localhost:8000/api/v1/pipeline/deseq2', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ control_job_id: controlJobId, treated_job_id: treatedJobId })
+      });
+      if (res.ok) {
+        setDeseqStatus('COMPLETED');
+        setTerminalLogs(prev => [...prev, `[DESeq2] Differential expression complete. MultiQC report updated.`]);
+      }
+    } catch (err) {
+      setDeseqStatus('FAILED');
     }
   };
 
@@ -63,18 +86,17 @@ export default function App() {
   return (
     <div style={{ backgroundColor: '#0b1120', color: '#f8fafc', minHeight: '100vh', padding: '24px', fontFamily: 'sans-serif' }}>
       
-      {/* Top Header & Navigation */}
+      {/* Top Header & View Switcher */}
       <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #1e293b', paddingBottom: '16px', marginBottom: '24px' }}>
         <div>
           <h1 style={{ fontSize: '26px', fontWeight: 'bold', margin: '0 0 4px 0', color: '#ffffff' }}>
             RNA-Seq Transcriptomics Workbench
           </h1>
           <p style={{ fontSize: '13px', color: '#cbd5e1', margin: 0 }}>
-            FastAPI + HISAT2 + DESeq2 + Scanpy Single-Cell Engine
+            FastAPI + HISAT2 + featureCounts + DESeq2 + Scanpy Engine
           </p>
         </div>
 
-        {/* Dashboard Switcher Tabs */}
         <div style={{ display: 'flex', gap: '8px', backgroundColor: '#0f172a', border: '1px solid #1e293b', padding: '4px', borderRadius: '8px' }}>
           <button 
             onClick={() => setActiveTab('pipeline')}
@@ -104,53 +126,98 @@ export default function App() {
             <span>🗄️</span> SQLite Active
           </div>
 
-          <section style={{ marginBottom: '28px' }}>
-            <h2 style={{ fontSize: '18px', fontWeight: 'bold', margin: '0 0 12px 0', color: '#ffffff' }}>
+          {/* Alignment Pipeline Controls */}
+          <section style={{ marginBottom: '32px' }}>
+            <h2 style={{ fontSize: '18px', fontWeight: 'bold', margin: '0 0 16px 0', color: '#ffffff' }}>
               ❯ Launch Pipeline Run
             </h2>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxWidth: '320px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <label style={{ fontSize: '13px' }}>SRA Accession</label>
-                <input type="text" value={sraAccession} onChange={(e) => setSraAccession(e.target.value)} style={{ width: '130px' }} />
+            
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxWidth: '340px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <label style={{ fontSize: '13px', color: '#f8fafc' }}>SRA Accession</label>
+                <input 
+                  type="text" 
+                  value={sraAccession} 
+                  onChange={(e) => setSraAccession(e.target.value)}
+                  style={{ backgroundColor: '#ffffff', color: '#000000', padding: '3px 8px', border: '1px solid #ccc', borderRadius: '3px', width: '150px', fontSize: '13px' }}
+                />
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <label style={{ fontSize: '13px' }}>CPU Threads</label>
-                <input type="number" value={cpuThreads} onChange={(e) => setCpuThreads(e.target.value)} style={{ width: '130px' }} />
+
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <label style={{ fontSize: '13px', color: '#f8fafc' }}>CPU Threads</label>
+                <input 
+                  type="number" 
+                  value={cpuThreads} 
+                  onChange={(e) => setCpuThreads(e.target.value)}
+                  style={{ backgroundColor: '#ffffff', color: '#000000', padding: '3px 8px', border: '1px solid #ccc', borderRadius: '3px', width: '150px', fontSize: '13px' }}
+                />
               </div>
-              <button onClick={handleLaunchPipeline} style={{ padding: '4px 8px', marginTop: '4px', cursor: 'pointer' }}>
+
+              <button 
+                onClick={handleLaunchPipeline}
+                style={{ backgroundColor: '#ffffff', color: '#000000', border: '1px solid #999', padding: '4px 10px', borderRadius: '3px', cursor: 'pointer', fontSize: '13px', textAlign: 'left', width: 'fit-content', marginTop: '4px' }}
+              >
                 Execute Alignment & Counts
               </button>
-              <div style={{ fontSize: '13px', marginTop: '4px' }}>Job ID: {jobId}</div>
-              <div style={{ fontSize: '13px' }}>Status: {jobStatus}</div>
-              <button onClick={() => window.open(`http://localhost:8000/api/v1/pipeline/fastqc/${jobId}`, '_blank')} style={{ padding: '4px 8px', cursor: 'pointer', width: 'fit-content' }}>
-                📋 Inspect FastQC Report
+
+              <div style={{ fontSize: '13px', marginTop: '4px' }}>Job ID: <b>{jobId}</b></div>
+              <div style={{ fontSize: '13px' }}>Status: <span style={{ color: jobStatus === 'COMPLETED' ? '#4ade80' : '#facc15', fontWeight: 'bold' }}>{jobStatus}</span></div>
+
+              <button 
+                onClick={() => window.open(`http://localhost:8000/api/v1/pipeline/fastqc/${jobId}`, '_blank')}
+                style={{ backgroundColor: '#ffffff', color: '#000000', border: '1px solid #999', padding: '4px 10px', borderRadius: '3px', cursor: 'pointer', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '6px', width: 'fit-content', marginTop: '4px' }}
+              >
+                <span>📋</span> Inspect FastQC Report
               </button>
             </div>
           </section>
 
-          <section style={{ marginBottom: '28px' }}>
-            <h2 style={{ fontSize: '18px', fontWeight: 'bold', margin: '0 0 12px 0', color: '#ffffff' }}>
+          {/* DESeq2 Controls */}
+          <section style={{ marginBottom: '32px' }}>
+            <h2 style={{ fontSize: '18px', fontWeight: 'bold', margin: '0 0 16px 0', color: '#ffffff' }}>
               ⚗ DESeq2 Differential Expression
             </h2>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxWidth: '320px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <label style={{ fontSize: '13px' }}>Control Job ID</label>
-                <input type="text" value={controlJobId} onChange={(e) => setControlJobId(e.target.value)} style={{ width: '130px' }} />
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxWidth: '340px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <label style={{ fontSize: '13px', color: '#f8fafc' }}>Control Job ID</label>
+                <input 
+                  type="text" 
+                  value={controlJobId} 
+                  onChange={(e) => setControlJobId(e.target.value)}
+                  style={{ backgroundColor: '#ffffff', color: '#000000', padding: '3px 8px', border: '1px solid #ccc', borderRadius: '3px', width: '150px', fontSize: '13px' }}
+                />
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <label style={{ fontSize: '13px' }}>Treated Job ID</label>
-                <input type="text" value={treatedJobId} onChange={(e) => setTreatedJobId(e.target.value)} style={{ width: '130px' }} />
+
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <label style={{ fontSize: '13px', color: '#f8fafc' }}>Treated Job ID</label>
+                <input 
+                  type="text" 
+                  value={treatedJobId} 
+                  onChange={(e) => setTreatedJobId(e.target.value)}
+                  style={{ backgroundColor: '#ffffff', color: '#000000', padding: '3px 8px', border: '1px solid #ccc', borderRadius: '3px', width: '150px', fontSize: '13px' }}
+                />
               </div>
+
+              <button 
+                onClick={handleRunDeseq2}
+                style={{ backgroundColor: '#ffffff', color: '#000000', border: '1px solid #999', padding: '4px 10px', borderRadius: '3px', cursor: 'pointer', fontSize: '13px', textAlign: 'left', width: 'fit-content', marginTop: '4px' }}
+              >
+                Run Differential Expression
+              </button>
             </div>
           </section>
 
+          {/* Live Terminal Output Stream */}
           <div>
-            <div style={{ fontSize: '12px', fontFamily: 'monospace', color: '#ffffff', marginBottom: '4px' }}>
+            <div style={{ fontSize: '13px', fontFamily: 'monospace', color: '#ffffff', marginBottom: '6px' }}>
               LIVE TERMINAL STREAM :: {jobId}
             </div>
-            <div style={{ fontFamily: 'monospace', fontSize: '12px', color: '#38bdf8' }}>
+            <div style={{ fontFamily: 'monospace', fontSize: '12px', color: '#38bdf8', backgroundColor: '#020617', padding: '12px', borderRadius: '6px', border: '1px solid #1e293b', maxHeight: '180px', overflowY: 'auto' }}>
               {terminalLogs.map((log, index) => (
-                <div key={index}><span style={{ color: '#4ade80' }}>[SYSTEM]</span> {log.replace('[SYSTEM]', '').trim()}</div>
+                <div key={index} style={{ marginBottom: '3px' }}>
+                  <span style={{ color: '#4ade80' }}>[SYSTEM]</span> {log.replace('[SYSTEM]', '').trim()}
+                </div>
               ))}
             </div>
           </div>
@@ -160,7 +227,7 @@ export default function App() {
       {/* TAB 2: DESeq2 DEG TABLE */}
       {activeTab === 'degs' && (
         <main>
-          <DEGTable degData={sampleDegs} />
+          <DEGTable />
         </main>
       )}
 
