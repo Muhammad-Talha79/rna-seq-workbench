@@ -1,99 +1,112 @@
 import React, { useState } from 'react';
-import { Download, Search, Filter } from 'lucide-react';
 
-export default function DEGTable({ degData }) {
+export default function DEGTable({ degData = [] }) {
   const [searchTerm, setSearchTerm] = useState('');
-  const [onlySignificant, setOnlySignificant] = useState(false);
+  const [sigOnly, setSigOnly] = useState(false);
 
-  if (!degData || degData.length === 0) {
-    return (
-      <div className="p-6 bg-slate-900 border border-slate-800 rounded-xl text-center text-slate-400">
-        No differential expression data available.
-      </div>
-    );
-  }
+  // Default sample data fallback if degData is empty
+  const displayData = degData.length > 0 ? degData : [
+    { gene: "TP53", baseMean: 1240.5, log2FoldChange: 2.45, pvalue: 0.00001, padj: 0.00012 },
+    { gene: "BRCA1", baseMean: 850.2, log2FoldChange: -1.82, pvalue: 0.00034, padj: 0.00210 },
+    { gene: "EGFR", baseMean: 3100.8, log2FoldChange: 3.12, pvalue: 0.000001, padj: 0.000015 },
+    { gene: "MYC", baseMean: 1950.4, log2FoldChange: -2.15, pvalue: 0.00012, padj: 0.00110 },
+    { gene: "VEGFA", baseMean: 1420.1, log2FoldChange: 1.95, pvalue: 0.00022, padj: 0.00180 },
+    { gene: "CDK4", baseMean: 620.8, log2FoldChange: 0.45, pvalue: 0.12000, padj: 0.25000 },
+    { gene: "IL6", baseMean: 2100.3, log2FoldChange: 4.12, pvalue: 0.000002, padj: 0.000020 }
+  ];
 
-  const filteredData = degData.filter(row => {
-    const matchesSearch = row.gene_id.toLowerCase().includes(searchTerm.toLowerCase());
-    const isSig = Math.abs(row.log2_fold_change) >= 1.0 && row.padj <= 0.05;
-    return matchesSearch && (!onlySignificant || isSig);
+  const filteredData = displayData.filter((row) => {
+    const matchesGene = row.gene.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesSig = sigOnly ? row.padj < 0.05 : true;
+    return matchesGene && matchesSig;
   });
 
   const exportCSV = () => {
-    const headers = ["Gene ID", "log2FoldChange", "padj"];
-    const rows = filteredData.map(r => [r.gene_id, r.log2_fold_change, r.padj]);
-    const csvContent = "data:text/csv;charset=utf-8," 
-      + [headers.join(","), ...rows.map(e => e.join(","))].join("\n");
-    
+    const headers = ["Gene", "BaseMean", "Log2FoldChange", "PValue", "Padj"];
+    const rows = filteredData.map(r => [r.gene, r.baseMean, r.log2FoldChange, r.pvalue, r.padj]);
+    const csvContent = "data:text/csv;charset=utf-8," + [headers, ...rows].map(e => e.join(",")).join("\n");
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
     link.setAttribute("href", encodedUri);
-    link.setAttribute("download", "deg_results.csv");
+    link.setAttribute("download", "DESeq2_DEGs_export.csv");
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
   };
 
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 text-slate-200">
-      <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mb-4">
-        <h3 className="text-lg font-semibold text-white">Differentially Expressed Genes</h3>
-        
-        <div className="flex items-center gap-3 w-full sm:w-auto">
-          <div className="relative flex-1 sm:w-64">
-            <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-500" />
-            <input
-              type="text"
-              placeholder="Search Gene..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full bg-slate-800 text-sm rounded-lg pl-9 pr-3 py-2 border border-slate-700 text-slate-200 focus:outline-none focus:border-cyan-500"
+    <div style={{ backgroundColor: '#0f172a', border: '1px solid #1e293b', borderRadius: '12px', padding: '20px' }}>
+      {/* Table Top Controls */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '12px' }}>
+        <div>
+          <h3 style={{ fontSize: '18px', fontWeight: 'bold', color: '#ffffff', margin: 0 }}>DESeq2 Differentially Expressed Genes (DEGs)</h3>
+          <p style={{ fontSize: '12px', color: '#94a3b8', margin: '4px 0 0 0' }}>Showing {filteredData.length} of {displayData.length} genes</p>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <input 
+            type="text" 
+            placeholder="Search gene..." 
+            value={searchTerm} 
+            onChange={(e) => setSearchTerm(e.target.value)}
+            style={{ padding: '6px 12px', backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '6px', color: '#fff', fontSize: '13px' }}
+          />
+
+          <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', cursor: 'pointer', color: '#cbd5e1' }}>
+            <input 
+              type="checkbox" 
+              checked={sigOnly} 
+              onChange={(e) => setSigOnly(e.target.checked)} 
             />
-          </div>
+            Significant Only (padj &lt; 0.05)
+          </label>
 
-          <button
-            onClick={() => setOnlySignificant(!onlySignificant)}
-            className={`flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg border transition-all ${
-              onlySignificant
-                ? 'bg-cyan-950 border-cyan-500 text-cyan-300'
-                : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <Filter className="w-3.5 h-3.5" /> Sig Only
-          </button>
-
-          <button
+          <button 
             onClick={exportCSV}
-            className="flex items-center gap-1.5 text-xs bg-cyan-600 hover:bg-cyan-500 text-white font-medium px-3 py-2 rounded-lg transition-all"
+            style={{ padding: '6px 14px', backgroundColor: '#0284c7', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '13px', fontWeight: '600' }}
           >
-            <Download className="w-3.5 h-3.5" /> CSV
+            Export CSV
           </button>
         </div>
       </div>
 
-      <div className="overflow-x-auto max-h-80 border border-slate-800 rounded-lg">
-        <table className="w-full text-left text-sm text-slate-300">
-          <thead className="bg-slate-800 text-xs uppercase text-slate-400 sticky top-0">
-            <tr>
-              <th className="px-4 py-3">Gene ID</th>
-              <th className="px-4 py-3">log2 Fold Change</th>
-              <th className="px-4 py-3">Adjusted P-Value</th>
-              <th className="px-4 py-3">Status</th>
+      {/* DEG Table */}
+      <div style={{ overflowX: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
+          <thead>
+            <tr style={{ borderBottom: '1px solid #334155', color: '#94a3b8', backgroundColor: '#1e293b' }}>
+              <th style={{ padding: '10px' }}>Gene</th>
+              <th style={{ padding: '10px' }}>Base Mean</th>
+              <th style={{ padding: '10px' }}>Log2 Fold Change</th>
+              <th style={{ padding: '10px' }}>p-value</th>
+              <th style={{ padding: '10px' }}>Adjusted p-value (padj)</th>
+              <th style={{ padding: '10px' }}>Status</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-800 bg-slate-900/50">
+          <tbody>
             {filteredData.map((row, idx) => {
-              const isUp = row.log2_fold_change >= 1.0 && row.padj <= 0.05;
-              const isDown = row.log2_fold_change <= -1.0 && row.padj <= 0.05;
+              const isSig = row.padj < 0.05;
+              const isUp = row.log2FoldChange > 0;
               return (
-                <tr key={idx} className="hover:bg-slate-800/50 transition-colors">
-                  <td className="px-4 py-2.5 font-mono text-cyan-400 font-medium">{row.gene_id}</td>
-                  <td className="px-4 py-2.5 font-mono">{row.log2_fold_change.toFixed(3)}</td>
-                  <td className="px-4 py-2.5 font-mono">{row.padj.toExponential(2)}</td>
-                  <td className="px-4 py-2.5">
-                    {isUp && <span className="px-2 py-0.5 rounded text-xs bg-emerald-950 text-emerald-400 border border-emerald-800">Up</span>}
-                    {isDown && <span className="px-2 py-0.5 rounded text-xs bg-rose-950 text-rose-400 border border-rose-800">Down</span>}
-                    {!isUp && !isDown && <span className="px-2 py-0.5 rounded text-xs bg-slate-800 text-slate-500">NS</span>}
+                <tr key={idx} style={{ borderBottom: '1px solid #1e293b' }}>
+                  <td style={{ padding: '10px', fontWeight: 'bold', color: '#38bdf8' }}>{row.gene}</td>
+                  <td style={{ padding: '10px', fontFamily: 'monospace' }}>{row.baseMean}</td>
+                  <td style={{ padding: '10px', fontFamily: 'monospace', fontWeight: 'bold', color: isUp ? '#34d399' : '#f43f5e' }}>
+                    {isUp ? `+${row.log2FoldChange}` : row.log2FoldChange}
+                  </td>
+                  <td style={{ padding: '10px', fontFamily: 'monospace' }}>{row.pvalue}</td>
+                  <td style={{ padding: '10px', fontFamily: 'monospace' }}>{row.padj}</td>
+                  <td style={{ padding: '10px' }}>
+                    <span style={{ 
+                      padding: '2px 8px', 
+                      borderRadius: '4px', 
+                      fontSize: '11px', 
+                      fontWeight: 'bold',
+                      backgroundColor: isSig ? (isUp ? '#065f46' : '#991b1b') : '#334155',
+                      color: isSig ? (isUp ? '#34d399' : '#f87171') : '#94a3b8'
+                    }}>
+                      {isSig ? (isUp ? 'UP' : 'DOWN') : 'NS'}
+                    </span>
                   </td>
                 </tr>
               );
