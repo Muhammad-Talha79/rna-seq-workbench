@@ -1,29 +1,18 @@
-version: '3.8'
-
 services:
   backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
     container_name: rna_seq_backend
+    build: ./backend
     ports:
       - "8000:8000"
-    volumes:
-      - ./backend/data:/app/data
-      - ./backend/app:/app/app
     environment:
-      - DATABASE_URL=sqlite:////app/data/app.db
-    restart: unless-stopped
+      - PYTHONUNBUFFERED=1
 
   frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
     container_name: rna_seq_frontend
+    build: ./frontend
     ports:
       - "5173:5173"
-    volumes:
-      - ./frontend/src:/app/src
     depends_on:
       - backend
-    restart: unless-stopped
+    environment:
+      - VITE_API_URL=http://localhost:8000
